@@ -11,7 +11,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { authApi } from '../../src/api/authApi';
-import { extractFaceDescriptor, LIVENESS_STEPS } from '../../src/services/faceDetection';
+import { extractFaceDescriptorFromImage, LIVENESS_STEPS } from '../../src/services/faceDetection';
 import { FaceCameraGuide } from '../../src/components/camera/FaceCameraGuide';
 import { Button } from '../../src/components/common/Button';
 import { ErrorBanner } from '../../src/components/common/ErrorBanner';
@@ -31,6 +31,7 @@ export default function FaceEnrollScreen() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState(null);
 
+  const cameraRef = useRef(null);
   const isMounted = useRef(true);
 
   const fetchChallenge = async () => {
@@ -70,28 +71,46 @@ export default function FaceEnrollScreen() {
     setScanStatus('scanning');
     setErrorMessage(null);
 
-    // Liveness progression
+    // Liveness progression steps
     setTimeout(() => {
       if (isMounted.current) setCurrentStepIndex(1);
-    }, 800);
+    }, 700);
 
     setTimeout(() => {
       if (isMounted.current) setCurrentStepIndex(2);
-    }, 1600);
+    }, 1400);
 
     setTimeout(async () => {
       if (!isMounted.current) return;
 
       try {
-        const faceDescriptor = extractFaceDescriptor({
-          bounds: { origin: { x: 0.5, y: 0.5 }, size: { width: 0.55, height: 0.65 } },
-          yawAngle: 0,
-          rollAngle: 0,
-        });
+        let photo = null;
+        if (cameraRef.current) {
+          photo = await cameraRef.current.takePictureAsync({
+            base64: true,
+            quality: 0.25,
+            skipProcessing: true,
+          });
+        }
+
+        if (!photo?.base64) {
+          setScanStatus('failed');
+          setErrorMessage('Could not capture frame from camera. Please hold steady.');
+          fetchChallenge();
+          return;
+        }
+
+        const featureResult = extractFaceDescriptorFromImage(photo.base64);
+        if (!featureResult.success) {
+          setScanStatus('failed');
+          setErrorMessage(featureResult.message);
+          fetchChallenge();
+          return;
+        }
 
         const result = await enrollFace({
           challengeToken,
-          faceDescriptor,
+          faceDescriptor: featureResult.descriptor,
         });
 
         if (result.success) {
@@ -109,7 +128,7 @@ export default function FaceEnrollScreen() {
         setErrorMessage(err.message || 'An error occurred during face enrollment.');
         fetchChallenge();
       }
-    }, 2200);
+    }, 2000);
   };
 
   const toggleCameraFacing = () => {
@@ -145,7 +164,7 @@ export default function FaceEnrollScreen() {
 
   return (
     <View style={styles.container}>
-      <CameraView style={StyleSheet.absoluteFillObject} facing={facing}>
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing}>
         <FaceCameraGuide
           stepText={
             scanStatus === 'scanning'
@@ -187,6 +206,7 @@ export default function FaceEnrollScreen() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
