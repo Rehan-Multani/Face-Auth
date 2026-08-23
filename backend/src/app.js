@@ -8,12 +8,16 @@ const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
+// Trust reverse proxy (Vercel, AWS Lambda, Cloudflare, etc.)
+app.set('trust proxy', 1);
+
 // Request ID middleware for request tracking
 app.use((req, res, next) => {
   req.headers['x-request-id'] = req.headers['x-request-id'] || crypto.randomUUID();
   res.setHeader('X-Request-Id', req.headers['x-request-id']);
   next();
 });
+
 
 // Configure Helmet & CORS
 configureSecurity(app);
