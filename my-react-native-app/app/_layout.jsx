@@ -2,8 +2,11 @@ import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { AuthProvider } from '../src/context/AuthContext';
+import { useAuth } from '../src/hooks/useAuth';
 import { Colors } from '../src/constants/Colors';
+
+
 
 function RootNavigation() {
   const { isAuthenticated, isLoading } = useAuth();
