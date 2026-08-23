@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "CraveGo",
-    "slug": "cravego",
+    "name": "FaceAuth",
+    "slug": "face-auth",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "cravego",
+    "scheme": "faceauth",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -13,14 +13,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E63946",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.cravego.app"
+      "package": "com.faceauth.app"
     },
     "web": {
       "output": "static",
@@ -34,10 +34,16 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#E63946",
+          "backgroundColor": "#0F172A",
           "dark": {
-            "backgroundColor": "#121218"
+            "backgroundColor": "#0F172A"
           }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow FaceAuth to access camera for facial recognition login and enrollment."
         }
       ],
       "expo-secure-store"
@@ -45,12 +51,7 @@
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
-    },
-    "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "22520084-be75-49ce-a94a-d67ba665cc30"
-      }
     }
   }
 }
+
