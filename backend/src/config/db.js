@@ -1,32 +1,48 @@
 const mongoose = require('mongoose');
 const env = require('./env');
 
+/**
+ * Global connection cache for serverless environments (e.g. Vercel)
+ */
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(env.MONGO_URI, {
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
       maxPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
+    };
+
+    cached.promise = mongoose.connect(env.MONGO_URI, opts).then((mongooseInstance) => {
+      console.log(`[Database] MongoDB Connected: ${mongooseInstance.connection.host}`);
+      return mongooseInstance;
     });
+  }
 
-    console.log(`[Database] MongoDB Connected: ${conn.connection.host}`);
-
-    mongoose.connection.on('error', (err) => {
-      console.error(`[Database Error] Connection error: ${err.message}`);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.warn('[Database Warning] MongoDB disconnected. Attempting reconnect...');
-    });
-
-    return conn;
+  try {
+    cached.conn = await cached.promise;
   } catch (error) {
+    cached.promise = null;
     console.error(`[Database Fatal] Could not connect to MongoDB: ${error.message}`);
-    // Don't crash immediately in dev to allow server to boot, but log clearly
-    if (env.NODE_ENV === 'production') {
+    // Don't crash immediately in dev or vercel serverless handler
+    if (env.NODE_ENV === 'production' && !process.env.VERCEL) {
       process.exit(1);
     }
+    throw error;
   }
+
+  return cached.conn;
 };
 
 module.exports = connectDB;
+

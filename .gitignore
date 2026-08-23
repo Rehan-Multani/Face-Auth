@@ -16,6 +16,9 @@ dist/
 */dist/
 web-build/
 */web-build/
+.vercel
+*/.vercel
+
 
 # Native folders
 android/

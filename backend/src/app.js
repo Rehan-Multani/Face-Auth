@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const connectDB = require('./config/db');
 const { configureSecurity, sanitizeBody } = require('./middleware/security');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
@@ -24,17 +25,52 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 // Sanitize inputs (NoSQL injection defense)
 app.use(sanitizeBody);
 
-// General rate limiter for all API routes
-app.use('/api', apiLimiter);
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
+// Root endpoint
+app.get('/', (req, res) => {
   res.status(200).json({
-    status: 'UP',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
+    name: 'Face Auth Backend API',
+    status: 'online',
+    healthCheck: '/api/health',
   });
 });
+
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    await connectDB();
+    res.status(200).json({
+      status: 'UP',
+      database: 'CONNECTED',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'DEGRADED',
+      database: 'DISCONNECTED',
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// Auto-connect to database for API routes (Serverless / Vercel execution)
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('[DB Middleware Error]', err.message);
+    return res.status(500).json({
+      success: false,
+      code: 'DB_CONNECTION_ERROR',
+      message: 'Database connection failed. Please ensure MongoDB URI and Network Access are configured correctly.',
+    });
+  }
+});
+
+// General rate limiter for all API routes
+app.use('/api', apiLimiter);
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -52,3 +88,4 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
+
