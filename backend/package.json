@@ -1,0 +1,25 @@
+{
+  "name": "face-auth-backend",
+  "version": "1.0.0",
+  "description": "Production-Ready Face & Password Auth Backend with Node.js, Express, and MongoDB",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "keywords": ["react-native", "auth", "face-recognition", "jwt", "mongodb"],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.12.1",
+    "validator": "^13.12.0"
+  }
+}
