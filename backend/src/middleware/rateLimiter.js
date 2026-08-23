@@ -6,7 +6,7 @@ const authLimiter = rateLimit({
   max: 20, // max 20 attempts per window
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
+  validate: false,
   message: {
     success: false,
     code: 'TOO_MANY_REQUESTS',
@@ -20,7 +20,7 @@ const challengeLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
+  validate: false,
   message: {
     success: false,
     code: 'TOO_MANY_CHALLENGES',
@@ -34,13 +34,14 @@ const apiLimiter = rateLimit({
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
+  validate: false,
   message: {
     success: false,
     code: 'RATE_LIMIT_EXCEEDED',
     message: 'Too many requests. Please slow down.',
   },
 });
+
 
 module.exports = {
   authLimiter,
