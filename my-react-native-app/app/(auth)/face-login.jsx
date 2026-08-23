@@ -73,65 +73,52 @@ export default function FaceLoginScreen() {
     setScanStatus('scanning');
     setErrorMessage(null);
 
-    // Fast smooth visual scan progression
-    setTimeout(() => {
-      if (isMounted.current) setCurrentStepIndex(1);
-    }, 120);
-
-    setTimeout(() => {
-      if (isMounted.current) setCurrentStepIndex(2);
-    }, 260);
-
-    setTimeout(async () => {
-      if (!isMounted.current) return;
-
-      try {
-        let photo = null;
-        if (cameraRef.current) {
-          photo = await cameraRef.current.takePictureAsync({
-            base64: true,
-            quality: 0.15,
-          });
-        }
-
-
-        if (!photo?.base64) {
-          setScanStatus('failed');
-          setErrorMessage('Could not capture frame from camera. Please hold steady.');
-          fetchChallenge();
-          return;
-        }
-
-        const featureResult = extractFaceDescriptorFromImage(photo.base64);
-        if (!featureResult.success) {
-          setScanStatus('failed');
-          setErrorMessage(featureResult.message);
-          fetchChallenge();
-          return;
-        }
-
-        const result = await faceLogin({
-          challengeToken,
-          faceDescriptor: featureResult.descriptor,
+    try {
+      let photo = null;
+      if (cameraRef.current) {
+        photo = await cameraRef.current.takePictureAsync({
+          base64: true,
+          quality: 0.15,
         });
-
-        if (result.success) {
-          setScanStatus('success');
-          setTimeout(() => {
-            router.replace('/(app)');
-          }, 600);
-        } else {
-          setScanStatus('failed');
-          setErrorMessage(result.message || 'Face not recognized. Only registered face can login.');
-          fetchChallenge(); // Refresh challenge token for next attempt
-        }
-      } catch (err) {
-        setScanStatus('failed');
-        setErrorMessage(err.message || 'An error occurred during face scan.');
-        fetchChallenge();
       }
-    }, 2000);
+
+      if (!photo?.base64) {
+        setScanStatus('failed');
+        setErrorMessage('Could not capture frame from camera. Please hold steady.');
+        fetchChallenge();
+        return;
+      }
+
+      const featureResult = extractFaceDescriptorFromImage(photo.base64);
+      if (!featureResult.success) {
+        setScanStatus('failed');
+        setErrorMessage(featureResult.message);
+        fetchChallenge();
+        return;
+      }
+
+      const result = await faceLogin({
+        challengeToken,
+        faceDescriptor: featureResult.descriptor,
+      });
+
+      if (result.success) {
+        setScanStatus('success');
+        setTimeout(() => {
+          router.replace('/(app)');
+        }, 500);
+      } else {
+        setScanStatus('failed');
+        setErrorMessage(result.message || 'Face not recognized. Only registered face can login.');
+        fetchChallenge(); // Refresh challenge token for next attempt
+      }
+    } catch (err) {
+      setScanStatus('failed');
+      setErrorMessage(err.message || 'An error occurred during face scan.');
+      fetchChallenge();
+    }
   };
+
 
   const toggleCameraFacing = () => {
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
