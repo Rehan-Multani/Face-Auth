@@ -1,3 +1,9 @@
+import { Buffer } from 'buffer';
+
+if (typeof global.Buffer === 'undefined') {
+  global.Buffer = Buffer;
+}
+
 import jpeg from 'jpeg-js';
 
 const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -5,6 +11,7 @@ const lookup = new Uint8Array(256);
 for (let i = 0; i < chars.length; i++) {
   lookup[chars.charCodeAt(i)] = i;
 }
+
 
 const base64ToUint8Array = (base64) => {
   const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '');

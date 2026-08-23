@@ -90,8 +90,7 @@ export default function FaceLoginScreen() {
         if (cameraRef.current) {
           photo = await cameraRef.current.takePictureAsync({
             base64: true,
-            quality: 0.25,
-            skipProcessing: true,
+            quality: 0.35,
           });
         }
 
@@ -167,61 +166,62 @@ export default function FaceLoginScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Live Camera View */}
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing}>
-        {/* Scanner Oval Overlay */}
-        <FaceCameraGuide
-          stepText={
-            scanStatus === 'scanning'
-              ? LIVENESS_STEPS[currentStepIndex]?.title || 'Verifying face...'
-              : scanStatus === 'success'
-              ? 'Face Authenticated!'
-              : scanStatus === 'failed'
-              ? 'Face Not Recognized'
-              : 'Center your face to login'
-          }
-          status={scanStatus}
-          isScanning={scanStatus === 'scanning'}
-          onFlipCamera={toggleCameraFacing}
-          onCancel={() => router.back()}
-        />
+      {/* Live Camera View (No nested children) */}
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing} />
 
-        {/* Bottom Control Actions */}
-        <View style={styles.bottomControls}>
-          {errorMessage && (
-            <ErrorBanner
-              type="error"
-              message={errorMessage}
-              onRetry={fetchChallenge}
-              style={{ marginBottom: 12 }}
+      {/* Scanner Oval Overlay */}
+      <FaceCameraGuide
+        stepText={
+          scanStatus === 'scanning'
+            ? LIVENESS_STEPS[currentStepIndex]?.title || 'Verifying face...'
+            : scanStatus === 'success'
+            ? 'Face Authenticated!'
+            : scanStatus === 'failed'
+            ? 'Face Not Recognized'
+            : 'Center your face to login'
+        }
+        status={scanStatus}
+        isScanning={scanStatus === 'scanning'}
+        onFlipCamera={toggleCameraFacing}
+        onCancel={() => router.back()}
+      />
+
+      {/* Bottom Control Actions */}
+      <View style={styles.bottomControls}>
+        {errorMessage && (
+          <ErrorBanner
+            type="error"
+            message={errorMessage}
+            onRetry={fetchChallenge}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        {scanStatus !== 'scanning' && scanStatus !== 'success' && (
+          <>
+            <Button
+              title={isChallengeLoading ? 'Securing Session...' : 'Scan Face to Authenticate'}
+              onPress={handleCaptureAndAuthenticate}
+              loading={isChallengeLoading}
+              disabled={isChallengeLoading}
+              icon={<Ionicons name="scan" size={20} color="#FFFFFF" />}
+              style={{ width: '100%' }}
             />
-          )}
 
-          {scanStatus !== 'scanning' && scanStatus !== 'success' && (
-            <>
-              <Button
-                title={isChallengeLoading ? 'Securing Session...' : 'Scan Face to Authenticate'}
-                onPress={handleCaptureAndAuthenticate}
-                loading={isChallengeLoading}
-                disabled={isChallengeLoading}
-                icon={<Ionicons name="scan" size={20} color="#FFFFFF" />}
-                style={{ width: '100%' }}
-              />
-
-              <TouchableOpacity
-                onPress={() => router.replace('/(auth)/login')}
-                style={styles.fallbackLink}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.fallbackText}>Use Email & Password instead</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </CameraView>
+            <TouchableOpacity
+              onPress={() => router.replace('/(auth)/login')}
+              style={styles.fallbackLink}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.fallbackText}>Use Email & Password instead</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
     </View>
   );
 }
+
 
 
 const styles = StyleSheet.create({

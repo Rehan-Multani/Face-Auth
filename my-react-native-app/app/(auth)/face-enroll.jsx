@@ -88,8 +88,7 @@ export default function FaceEnrollScreen() {
         if (cameraRef.current) {
           photo = await cameraRef.current.takePictureAsync({
             base64: true,
-            quality: 0.25,
-            skipProcessing: true,
+            quality: 0.35,
           });
         }
 
@@ -164,48 +163,52 @@ export default function FaceEnrollScreen() {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing}>
-        <FaceCameraGuide
-          stepText={
-            scanStatus === 'scanning'
-              ? LIVENESS_STEPS[currentStepIndex]?.title || 'Registering facial landmarks...'
-              : scanStatus === 'success'
-              ? 'Face Registered Successfully!'
-              : scanStatus === 'failed'
-              ? 'Enrollment Failed'
-              : 'Align your face in the oval to enroll'
-          }
-          status={scanStatus}
-          isScanning={scanStatus === 'scanning'}
-          onFlipCamera={toggleCameraFacing}
-          onCancel={() => router.back()}
-        />
+      {/* Live Camera View (No nested children) */}
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing} />
 
-        <View style={styles.bottomControls}>
-          {errorMessage && (
-            <ErrorBanner
-              type="error"
-              message={errorMessage}
-              onRetry={fetchChallenge}
-              style={{ marginBottom: 12 }}
-            />
-          )}
+      {/* Scanner Oval Overlay */}
+      <FaceCameraGuide
+        stepText={
+          scanStatus === 'scanning'
+            ? LIVENESS_STEPS[currentStepIndex]?.title || 'Registering facial landmarks...'
+            : scanStatus === 'success'
+            ? 'Face Registered Successfully!'
+            : scanStatus === 'failed'
+            ? 'Enrollment Failed'
+            : 'Align your face in the oval to enroll'
+        }
+        status={scanStatus}
+        isScanning={scanStatus === 'scanning'}
+        onFlipCamera={toggleCameraFacing}
+        onCancel={() => router.back()}
+      />
 
-          {scanStatus !== 'scanning' && scanStatus !== 'success' && (
-            <Button
-              title={isChallengeLoading ? 'Securing Session...' : 'Capture & Register Face'}
-              onPress={handleCaptureAndEnroll}
-              loading={isChallengeLoading}
-              disabled={isChallengeLoading}
-              icon={<Ionicons name="finger-print" size={20} color="#FFFFFF" />}
-              style={{ width: '100%' }}
-            />
-          )}
-        </View>
-      </CameraView>
+      {/* Bottom Control Actions */}
+      <View style={styles.bottomControls}>
+        {errorMessage && (
+          <ErrorBanner
+            type="error"
+            message={errorMessage}
+            onRetry={fetchChallenge}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        {scanStatus !== 'scanning' && scanStatus !== 'success' && (
+          <Button
+            title={isChallengeLoading ? 'Securing Session...' : 'Capture & Register Face'}
+            onPress={handleCaptureAndEnroll}
+            loading={isChallengeLoading}
+            disabled={isChallengeLoading}
+            icon={<Ionicons name="finger-print" size={20} color="#FFFFFF" />}
+            style={{ width: '100%' }}
+          />
+        )}
+      </View>
     </View>
   );
 }
+
 
 
 const styles = StyleSheet.create({
