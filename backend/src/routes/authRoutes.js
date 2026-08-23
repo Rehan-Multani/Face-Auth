@@ -29,6 +29,8 @@ router.post(
   validateFaceEnroll,
   authController.enrollFace
 );
+router.post('/face/disable', requireAuth, authLimiter, authController.disableFaceAuth);
 router.get('/me', requireAuth, authController.getMe);
 
 module.exports = router;
+

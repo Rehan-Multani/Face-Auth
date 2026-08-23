@@ -102,8 +102,27 @@ export default function LoginScreen() {
           />
         )}
 
-        {/* Form Fields */}
+        {/* Instant Face Login (Primary Zero-Credential Action) */}
         <View style={styles.form}>
+          <Button
+            title="Instant Face Login (No Password)"
+            variant="primary"
+            icon={<Ionicons name="scan" size={22} color="#FFFFFF" />}
+            onPress={() => router.push('/(auth)/face-login')}
+            disabled={!isConnected}
+            style={{ marginBottom: 6 }}
+          />
+          <Text style={[styles.faceLoginHint, { color: theme.textSecondary }]}>
+            Direct 1:N biometric login • No email or password required
+          </Text>
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.divider, { backgroundColor: theme.surfaceBorder }]} />
+            <Text style={[styles.dividerText, { color: theme.textMuted }]}>OR USE PASSWORD</Text>
+            <View style={[styles.divider, { backgroundColor: theme.surfaceBorder }]} />
+          </View>
+
           <Input
             label="Email Address"
             placeholder="you@domain.com"
@@ -132,29 +151,15 @@ export default function LoginScreen() {
           />
 
           <Button
-            title="Sign In"
+            title="Sign In with Password"
+            variant="secondary"
             onPress={handleLogin}
             loading={isSubmitting}
             disabled={isSubmitting || !isConnected}
             style={{ marginTop: 12 }}
           />
-
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={[styles.divider, { backgroundColor: theme.surfaceBorder }]} />
-            <Text style={[styles.dividerText, { color: theme.textMuted }]}>OR</Text>
-            <View style={[styles.divider, { backgroundColor: theme.surfaceBorder }]} />
-          </View>
-
-          {/* Biometric Face Login CTA */}
-          <Button
-            title="Sign In with Face Biometrics"
-            variant="secondary"
-            icon={<Ionicons name="scan-outline" size={20} color={theme.secondary} />}
-            onPress={() => router.push('/(auth)/face-login')}
-            disabled={!isConnected}
-          />
         </View>
+
 
         {/* Footer Link */}
         <View style={styles.footer}>
@@ -207,7 +212,13 @@ const styles = StyleSheet.create({
   form: {
     width: '100%',
   },
+  faceLoginHint: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
   dividerRow: {
+
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 18,

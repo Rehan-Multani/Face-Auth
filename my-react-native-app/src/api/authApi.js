@@ -16,22 +16,29 @@ export const authApi = {
     return response.data;
   },
 
-  async enrollFace({ challengeToken, faceDescriptor }) {
+  async enrollFace({ challengeToken, faceDescriptor, samples, metadata }) {
     const response = await apiClient.post('/auth/face/enroll', {
+      challengeToken,
+      faceDescriptor,
+      samples,
+      metadata,
+    });
+    return response.data;
+  },
+
+  async verifyFaceLogin({ challengeToken, faceDescriptor }) {
+    const response = await apiClient.post('/auth/face/verify', {
       challengeToken,
       faceDescriptor,
     });
     return response.data;
   },
 
-  async verifyFaceLogin({ challengeToken, faceDescriptor, email }) {
-    const response = await apiClient.post('/auth/face/verify', {
-      challengeToken,
-      faceDescriptor,
-      email,
-    });
+  async disableFaceAuth() {
+    const response = await apiClient.post('/auth/face/disable');
     return response.data;
   },
+
 
   async logout(refreshToken) {
     try {

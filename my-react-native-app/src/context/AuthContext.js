@@ -84,14 +84,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const faceLogin = async ({ challengeToken, faceDescriptor, email }) => {
+  const faceLogin = async ({ challengeToken, faceDescriptor }) => {
     setAuthError(null);
     try {
-      const data = await authApi.verifyFaceLogin({ challengeToken, faceDescriptor, email });
+      const data = await authApi.verifyFaceLogin({ challengeToken, faceDescriptor });
       await SecureStorage.saveSession(data.accessToken, data.refreshToken, data.user);
       setUser(data.user);
       setIsAuthenticated(true);
-      return { success: true, user: data.user };
+      return { success: true, user: data.user, matchConfidence: data.matchConfidence };
     } catch (err) {
       const message = err.message || 'Face authentication failed.';
       setAuthError(message);
@@ -99,16 +99,31 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const enrollFace = async ({ challengeToken, faceDescriptor }) => {
+  const enrollFace = async ({ challengeToken, faceDescriptor, samples, metadata }) => {
     setAuthError(null);
     try {
-      const data = await authApi.enrollFace({ challengeToken, faceDescriptor });
+      const data = await authApi.enrollFace({ challengeToken, faceDescriptor, samples, metadata });
       const updatedUser = { ...user, isFaceRegistered: true };
       setUser(updatedUser);
       await SecureStorage.setItem('auth_user_data_sec', JSON.stringify(updatedUser));
       return { success: true, message: data.message };
     } catch (err) {
       const message = err.message || 'Failed to enroll face biometric.';
+      setAuthError(message);
+      return { success: false, message };
+    }
+  };
+
+  const disableFaceAuth = async () => {
+    setAuthError(null);
+    try {
+      const data = await authApi.disableFaceAuth();
+      const updatedUser = { ...user, isFaceRegistered: false };
+      setUser(updatedUser);
+      await SecureStorage.setItem('auth_user_data_sec', JSON.stringify(updatedUser));
+      return { success: true, message: data.message };
+    } catch (err) {
+      const message = err.message || 'Failed to disable face biometric.';
       setAuthError(message);
       return { success: false, message };
     }
@@ -141,10 +156,12 @@ export const AuthProvider = ({ children }) => {
     register,
     faceLogin,
     enrollFace,
+    disableFaceAuth,
     logout,
     clearError,
     refreshProfile: bootstrapAsync,
   };
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

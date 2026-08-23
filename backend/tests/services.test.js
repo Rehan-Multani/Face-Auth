@@ -44,7 +44,50 @@ describe('Face Service Tests', () => {
     const invalidRes2 = faceService.validateFaceVector(nonNumbers);
     assert.strictEqual(invalidRes2.valid, false);
   });
+
+  it('should enforce single-use challenge token and reject replay attempts', () => {
+    const challenge = faceService.generateFaceChallenge();
+    const firstUse = faceService.verifyFaceChallenge(challenge.challengeToken);
+    assert.strictEqual(firstUse.valid, true, 'First verification should succeed');
+
+    const replayAttempt = faceService.verifyFaceChallenge(challenge.challengeToken);
+    assert.strictEqual(replayAttempt.valid, false, 'Second verification of same token must fail');
+    assert.strictEqual(replayAttempt.reason, 'CHALLENGE_ALREADY_USED');
+  });
+
+  it('should synthesize multi-sample face vectors into normalized template', () => {
+    const s1 = new Array(128).fill(0.08);
+    const s2 = new Array(128).fill(0.09);
+    const s3 = new Array(128).fill(0.085);
+
+    const result = faceService.synthesizeEnrolledTemplate([s1, s2, s3]);
+    assert.strictEqual(result.template.length, 128);
+    assert.strictEqual(result.samplesCount, 3);
+    assert.ok(result.qualityScore >= 0.9, 'Quality score should reflect multi-sample confidence');
+
+    // Check L2 unit norm
+    let sumSq = 0;
+    for (const val of result.template) sumSq += val * val;
+    assert.ok(Math.abs(sumSq - 1.0) < 0.001, 'Synthesized template must have L2 unit norm ~1.0');
+  });
+
+  it('should accurately rank candidates in 1:N biometric search', () => {
+    const targetVector = new Array(128).fill(0.088);
+    const similarVector = new Array(128).fill(0.087);
+    const differentVector = new Array(128).fill(0.088).map((v, i) => (i % 2 === 0 ? -v : v));
+
+    const candidates = [
+      { id: '1', user: { name: 'User Different' }, template: differentVector },
+      { id: '2', user: { name: 'User Target' }, template: similarVector },
+    ];
+
+    const ranked = faceService.rankCandidates(targetVector, candidates, 0.70);
+    assert.strictEqual(ranked.length, 1, 'Only candidates meeting threshold should match');
+    assert.strictEqual(ranked[0].user.name, 'User Target');
+    assert.ok(ranked[0].similarity > 0.95);
+  });
 });
+
 
 describe('Token Service Tests', () => {
   it('should hash plain tokens consistently', () => {

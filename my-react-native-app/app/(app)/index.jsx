@@ -19,8 +19,9 @@ import { Colors } from '../../src/constants/Colors';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { user, logout, refreshProfile } = useAuth();
+  const { user, logout, refreshProfile, disableFaceAuth } = useAuth();
   const { isConnected } = useNetworkStatus();
+
   const scheme = useColorScheme() ?? 'dark';
   const theme = Colors[scheme];
 
@@ -194,15 +195,32 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          <Button
-            title={user?.isFaceRegistered ? 'Update / Re-enroll Face' : 'Set Up Face Login'}
-            variant={user?.isFaceRegistered ? 'secondary' : 'primary'}
-            icon={<Ionicons name="camera-outline" size={18} color={user?.isFaceRegistered ? theme.text : '#FFFFFF'} />}
-            onPress={() => router.push('/(auth)/face-enroll')}
-            disabled={!isConnected}
-            style={{ marginTop: 14 }}
-          />
+          <View style={styles.cardActions}>
+            <Button
+              title={user?.isFaceRegistered ? 'Update / Re-enroll Face' : 'Set Up Face Login'}
+              variant={user?.isFaceRegistered ? 'secondary' : 'primary'}
+              icon={<Ionicons name="camera-outline" size={18} color={user?.isFaceRegistered ? theme.text : '#FFFFFF'} />}
+              onPress={() => router.push('/(auth)/face-enroll')}
+              disabled={!isConnected}
+              style={{ flex: 1 }}
+            />
+
+            {user?.isFaceRegistered && (
+              <Button
+                title="Disable Face Auth"
+                variant="outline"
+                icon={<Ionicons name="trash-outline" size={16} color={theme.danger} />}
+                onPress={async () => {
+                  await disableFaceAuth();
+                  await refreshProfile();
+                }}
+                disabled={!isConnected}
+                style={{ borderColor: theme.danger, marginTop: 8 }}
+              />
+            )}
+          </View>
         </View>
+
 
         {/* Security & Activity Details Card */}
         <View
