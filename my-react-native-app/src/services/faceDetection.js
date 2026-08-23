@@ -39,9 +39,24 @@ const base64ToUint8Array = (base64) => {
 };
 
 /**
- * Extract 128-dimensional biometric spatial-texture feature vector from decoded camera pixels
+ * Analyze one captured camera frame in a single JPEG-decode pass, returning
+ * both the 128-dimensional biometric spatial-texture descriptor (for
+ * enrollment/matching) and two cheap liveness signals derived from the same
+ * 8x8 luminance/gradient grid used to build the descriptor:
+ *
+ *  - eyeStripMean: mean luminance of the grid row that lands roughly where
+ *    the eyes sit within the oval ROI (row index 2 of 8, ~25%-37.5% down).
+ *    A genuine blink produces a measurable dip-and-recover across a 3-frame
+ *    burst; a static photo can't reproduce that.
+ *  - gradientCentroidX: the gradient-magnitude-weighted horizontal centroid
+ *    of the ROI, as a 0..1 fraction of its width. A head turn shifts this
+ *    measurably between the first and last frame of a burst; a static photo
+ *    stays flat.
+ *
+ * These are lightweight heuristics for active-liveness challenge-response,
+ * not ML-based presentation-attack detection.
  */
-export const extractFaceDescriptorFromImage = (base64Str) => {
+export const analyzeFrame = (base64Str) => {
   if (!base64Str || typeof base64Str !== 'string' || base64Str.length < 500) {
     return {
       success: false,
@@ -135,6 +150,26 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
       };
     }
 
+    // Liveness signals derived from the same grid — no extra decode/scan pass.
+    // Eye band: grid row index 2 of 8 (~25%-37.5% down the ROI).
+    let eyeStripSum = 0;
+    for (let c = 0; c < gridCols; c++) {
+      eyeStripSum += gridLum[2 * gridCols + c];
+    }
+    const eyeStripMean = eyeStripSum / gridCols;
+
+    let centroidNumerator = 0;
+    let centroidDenominator = 0;
+    for (let r = 0; r < gridRows; r++) {
+      for (let c = 0; c < gridCols; c++) {
+        const weight = gridGrad[r * gridCols + c];
+        const xFraction = (c + 0.5) / gridCols;
+        centroidNumerator += weight * xFraction;
+        centroidDenominator += weight;
+      }
+    }
+    const gradientCentroidX = centroidDenominator > 0 ? centroidNumerator / centroidDenominator : 0.5;
+
     const std = Math.sqrt(Math.max(1, faceVariance));
     const descriptor = new Float64Array(128);
 
@@ -161,7 +196,12 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
       finalDesc[i] = parseFloat((zeroCentered[i] / l2).toFixed(6));
     }
 
-    return { success: true, descriptor: finalDesc };
+    return {
+      success: true,
+      descriptor: finalDesc,
+      eyeStripMean: parseFloat(eyeStripMean.toFixed(3)),
+      gradientCentroidX: parseFloat(gradientCentroidX.toFixed(4)),
+    };
   } catch (err) {
     return {
       success: false,
@@ -170,14 +210,4 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
   }
 };
 
-
-
-/**
- * Liveness Step Definitions
- */
-export const LIVENESS_STEPS = [
-  { id: 'CENTER', title: 'Position your face in the oval', instruction: 'Look straight into the camera' },
-  { id: 'BLINK', title: 'Blink your eyes', instruction: 'Blink naturally to verify liveness' },
-  { id: 'HOLD', title: 'Hold steady', instruction: 'Scanning facial landmarks...' },
-];
 

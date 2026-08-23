@@ -1,28 +1,31 @@
 const crypto = require('crypto');
 const env = require('../config/env');
+const SecurityNonce = require('../models/SecurityNonce');
 
 const CHALLENGE_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
 
-// In-memory set for single-use nonce tracking with automatic TTL cleanup
-const consumedNonces = new Map();
+const LIVENESS_ACTIONS = ['BLINK', 'TURN_LEFT', 'TURN_RIGHT'];
 
-// Periodic prune of expired nonces (every 60 seconds)
-setInterval(() => {
-  const now = Date.now();
-  for (const [nonce, expiresAt] of consumedNonces.entries()) {
-    if (now > expiresAt) {
-      consumedNonces.delete(nonce);
-    }
-  }
-}, 60000).unref();
+// Relative luminance dip required in the middle frame of a 3-frame burst to
+// count as a genuine blink (normalized against the outer two frames, so it's
+// robust to ambient-lighting differences between devices).
+const BLINK_RELATIVE_DIP_THRESHOLD = 0.08;
+// Minimum horizontal shift (as a fraction of ROI width, 0..1) of the
+// gradient centroid between the first and last frame to count as a head turn.
+const TURN_CENTROID_SHIFT_THRESHOLD = 0.04;
 
 /**
- * Generate a cryptographically secure, single-use anti-replay challenge signed by the server
+ * Generate a cryptographically secure, single-use anti-replay challenge
+ * signed by the server, paired with a randomized active-liveness action the
+ * client must perform and prove during capture. Fully stateless to generate
+ * (no DB write) — only *verifying* a challenge touches storage, to record
+ * that it was consumed.
  */
 const generateFaceChallenge = () => {
   const nonce = crypto.randomBytes(16).toString('hex');
   const timestamp = Date.now();
-  const payload = `${nonce}:${timestamp}`;
+  const livenessAction = LIVENESS_ACTIONS[crypto.randomInt(LIVENESS_ACTIONS.length)];
+  const payload = `${nonce}:${timestamp}:${livenessAction}`;
   const signature = crypto
     .createHmac('sha256', env.JWT_ACCESS_SECRET)
     .update(payload)
@@ -31,25 +34,34 @@ const generateFaceChallenge = () => {
   return {
     challengeId: nonce,
     challengeToken: `${payload}:${signature}`,
+    livenessAction,
     expiresInMs: CHALLENGE_EXPIRY_MS,
   };
 };
 
 /**
- * Verify and CONSUME an anti-replay challenge token (Single-use enforcement)
+ * Verify and CONSUME an anti-replay challenge token (single-use enforcement).
+ * Cheap, local checks (shape, expiry, signature) run first; only a token
+ * that is already well-formed, unexpired, and validly signed reaches the
+ * database, where consumption is enforced by an atomic unique-index insert
+ * into SecurityNonce — a duplicate-key error means the token was replayed.
  */
-const verifyFaceChallenge = (challengeToken) => {
+const verifyFaceChallenge = async (challengeToken) => {
   if (!challengeToken || typeof challengeToken !== 'string') {
     return { valid: false, reason: 'MISSING_CHALLENGE_TOKEN' };
   }
 
   const parts = challengeToken.split(':');
-  if (parts.length !== 3) {
+  if (parts.length !== 4) {
     return { valid: false, reason: 'MALFORMED_CHALLENGE_TOKEN' };
   }
 
-  const [nonce, timestampStr, providedSignature] = parts;
+  const [nonce, timestampStr, livenessAction, providedSignature] = parts;
   const timestamp = parseInt(timestampStr, 10);
+
+  if (!LIVENESS_ACTIONS.includes(livenessAction)) {
+    return { valid: false, reason: 'MALFORMED_CHALLENGE_TOKEN' };
+  }
 
   if (isNaN(timestamp) || Date.now() - timestamp > CHALLENGE_EXPIRY_MS) {
     return { valid: false, reason: 'CHALLENGE_EXPIRED' };
@@ -59,30 +71,87 @@ const verifyFaceChallenge = (challengeToken) => {
     return { valid: false, reason: 'INVALID_TIMESTAMP' };
   }
 
-  // Check if nonce was already consumed (Replay Attack Prevention)
-  if (consumedNonces.has(nonce)) {
-    return { valid: false, reason: 'CHALLENGE_ALREADY_USED' };
-  }
-
-  const payload = `${nonce}:${timestampStr}`;
+  const payload = `${nonce}:${timestampStr}:${livenessAction}`;
   const expectedSignature = crypto
     .createHmac('sha256', env.JWT_ACCESS_SECRET)
     .update(payload)
     .digest('hex');
 
-  const valid = crypto.timingSafeEqual(
-    Buffer.from(providedSignature, 'hex'),
-    Buffer.from(expectedSignature, 'hex')
-  );
+  const providedSigBuffer = Buffer.from(providedSignature, 'hex');
+  const expectedSigBuffer = Buffer.from(expectedSignature, 'hex');
+  const validSignature =
+    providedSigBuffer.length === expectedSigBuffer.length &&
+    crypto.timingSafeEqual(providedSigBuffer, expectedSigBuffer);
 
-  if (!valid) {
+  if (!validSignature) {
     return { valid: false, reason: 'INVALID_SIGNATURE' };
   }
 
-  // Mark nonce as consumed until its expiration
-  consumedNonces.set(nonce, timestamp + CHALLENGE_EXPIRY_MS);
+  // Consume the nonce: an atomic insert that fails on duplicate key if this
+  // nonce was already used (replay attempt).
+  try {
+    await SecurityNonce.create({
+      nonce,
+      expiresAt: new Date(timestamp + CHALLENGE_EXPIRY_MS),
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return { valid: false, reason: 'CHALLENGE_ALREADY_USED' };
+    }
+    throw err;
+  }
 
-  return { valid: true, nonce };
+  return { valid: true, nonce, livenessAction };
+};
+
+/**
+ * Verify a 3-frame active-liveness signal against the action the signed
+ * challenge required. This is a lightweight heuristic — it defeats static
+ * photo attacks (a photo cannot blink or turn) and naive replay, but is NOT
+ * ML-based presentation-attack detection; a sophisticated prerecorded video
+ * of the real user performing the action could still pass.
+ */
+const verifyLivenessSignal = (action, frameSignals) => {
+  if (!LIVENESS_ACTIONS.includes(action)) {
+    return { valid: false, reason: 'INVALID_LIVENESS_ACTION' };
+  }
+
+  if (!Array.isArray(frameSignals) || frameSignals.length !== 3) {
+    return { valid: false, reason: 'INVALID_LIVENESS_SIGNAL_SHAPE' };
+  }
+
+  for (const frame of frameSignals) {
+    if (
+      !frame ||
+      typeof frame.eyeStripMean !== 'number' ||
+      typeof frame.gradientCentroidX !== 'number' ||
+      !isFinite(frame.eyeStripMean) ||
+      !isFinite(frame.gradientCentroidX)
+    ) {
+      return { valid: false, reason: 'INVALID_LIVENESS_SIGNAL_SHAPE' };
+    }
+  }
+
+  if (action === 'BLINK') {
+    const baseline = (frameSignals[0].eyeStripMean + frameSignals[2].eyeStripMean) / 2;
+    const dip = baseline - frameSignals[1].eyeStripMean;
+    const relativeDip = dip / Math.max(1, baseline);
+
+    if (relativeDip < BLINK_RELATIVE_DIP_THRESHOLD) {
+      return { valid: false, reason: 'LIVENESS_ACTION_NOT_DETECTED' };
+    }
+    return { valid: true };
+  }
+
+  // TURN_LEFT / TURN_RIGHT
+  const shift = frameSignals[2].gradientCentroidX - frameSignals[0].gradientCentroidX;
+  const expectedSign = action === 'TURN_LEFT' ? -1 : 1;
+  const passed = shift * expectedSign > TURN_CENTROID_SHIFT_THRESHOLD;
+
+  if (!passed) {
+    return { valid: false, reason: 'LIVENESS_ACTION_NOT_DETECTED' };
+  }
+  return { valid: true };
 };
 
 /**
@@ -195,41 +264,28 @@ const synthesizeEnrolledTemplate = (samples) => {
 };
 
 /**
- * 1:N Biometric Candidate Ranking
+ * 1:1 biometric verification against a single known device-bound credential.
+ * Deliberately does not accept a list of candidates — there is no code path
+ * in this service that scans across users.
  */
-const rankCandidates = (liveVector, candidateCredentials, threshold) => {
-  const ranked = [];
-
-  for (const cred of candidateCredentials) {
-    if (!cred.template || !Array.isArray(cred.template) || cred.template.length === 0) {
-      continue;
-    }
-
-    const similarity = calculateCosineSimilarity(liveVector, cred.template);
-    const distance = calculateEuclideanDistance(liveVector, cred.template);
-
-    if (similarity >= threshold) {
-      ranked.push({
-        credential: cred,
-        user: cred.user,
-        similarity,
-        distance,
-      });
-    }
-  }
-
-  // Sort descending by highest similarity score
-  ranked.sort((a, b) => b.similarity - a.similarity);
-  return ranked;
+const verifyOneToOne = (liveVector, enrolledTemplate, threshold) => {
+  const similarity = calculateCosineSimilarity(liveVector, enrolledTemplate);
+  const distance = calculateEuclideanDistance(liveVector, enrolledTemplate);
+  return {
+    matched: similarity >= threshold,
+    similarity,
+    distance,
+  };
 };
 
 module.exports = {
+  LIVENESS_ACTIONS,
   generateFaceChallenge,
   verifyFaceChallenge,
+  verifyLivenessSignal,
   calculateEuclideanDistance,
   calculateCosineSimilarity,
   validateFaceVector,
   synthesizeEnrolledTemplate,
-  rankCandidates,
+  verifyOneToOne,
 };
-

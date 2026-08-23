@@ -10,7 +10,8 @@ const env = {
   JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
   JWT_REFRESH_EXPIRES_IN_DAYS: parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS || '7', 10),
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
-  FACE_SIMILARITY_THRESHOLD: parseFloat(process.env.FACE_SIMILARITY_THRESHOLD || '0.70')
+  FACE_SIMILARITY_THRESHOLD: parseFloat(process.env.FACE_SIMILARITY_THRESHOLD || '0.55'),
+  BIOMETRIC_ACTIVE_KEY_VERSION: process.env.BIOMETRIC_ACTIVE_KEY_VERSION || 'v1',
 };
 
 
@@ -18,6 +19,12 @@ const env = {
 if (env.NODE_ENV === 'production') {
   if (env.JWT_ACCESS_SECRET.startsWith('dev_') || env.JWT_REFRESH_SECRET.startsWith('dev_')) {
     console.error('FATAL: Production JWT secrets must not use development defaults.');
+    process.exit(1);
+  }
+
+  const activeBiometricKeyVar = `BIOMETRIC_KEY_${env.BIOMETRIC_ACTIVE_KEY_VERSION.toUpperCase()}`;
+  if (!process.env[activeBiometricKeyVar]) {
+    console.error(`FATAL: Missing production biometric encryption key (${activeBiometricKeyVar}).`);
     process.exit(1);
   }
 }

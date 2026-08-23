@@ -12,11 +12,12 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { authApi } from '../../src/api/authApi';
-import { extractFaceDescriptorFromImage, LIVENESS_STEPS } from '../../src/services/faceDetection';
+import { captureLivenessBurst } from '../../src/services/livenessCapture';
 import { FaceCameraGuide } from '../../src/components/camera/FaceCameraGuide';
 import { Button } from '../../src/components/common/Button';
 import { ErrorBanner } from '../../src/components/common/ErrorBanner';
 import { Colors } from '../../src/constants/Colors';
+import { LIVENESS_INSTRUCTIONS } from '../../src/constants/Config';
 
 export default function FaceLoginScreen() {
   const router = useRouter();
@@ -27,22 +28,37 @@ export default function FaceLoginScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState('front');
   const [challengeToken, setChallengeToken] = useState(null);
+  const [livenessAction, setLivenessAction] = useState(null);
   const [isChallengeLoading, setIsChallengeLoading] = useState(true);
+  const [deviceNotEnrolled, setDeviceNotEnrolled] = useState(false);
   const [scanStatus, setScanStatus] = useState('ready'); // 'ready' | 'scanning' | 'success' | 'failed'
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState(null);
 
   const cameraRef = useRef(null);
   const isMounted = useRef(true);
 
-  // Fetch anti-replay challenge on mount
+  // Fetch anti-replay challenge (with its assigned liveness action) on mount.
+  // Skipped entirely if this device was never enrolled — face login can only
+  // ever succeed for the device it was set up on, so we fail fast in the UI
+  // instead of making a request that will always be rejected.
   const fetchChallenge = async () => {
     try {
       setIsChallengeLoading(true);
       setErrorMessage(null);
+
+      const deviceId = await authApi.getDeviceId();
+      if (!deviceId) {
+        if (isMounted.current) {
+          setDeviceNotEnrolled(true);
+          setIsChallengeLoading(false);
+        }
+        return;
+      }
+
       const data = await authApi.getFaceChallenge();
       if (isMounted.current && data?.challengeToken) {
         setChallengeToken(data.challengeToken);
+        setLivenessAction(data.livenessAction);
       }
     } catch (err) {
       if (isMounted.current) {
@@ -74,32 +90,18 @@ export default function FaceLoginScreen() {
     setErrorMessage(null);
 
     try {
-      let photo = null;
-      if (cameraRef.current) {
-        photo = await cameraRef.current.takePictureAsync({
-          base64: true,
-          quality: 0.15,
-        });
-      }
-
-      if (!photo?.base64) {
+      const burst = await captureLivenessBurst(cameraRef);
+      if (!burst.success) {
         setScanStatus('failed');
-        setErrorMessage('Could not capture frame from camera. Please hold steady.');
-        fetchChallenge();
-        return;
-      }
-
-      const featureResult = extractFaceDescriptorFromImage(photo.base64);
-      if (!featureResult.success) {
-        setScanStatus('failed');
-        setErrorMessage(featureResult.message);
+        setErrorMessage(burst.message);
         fetchChallenge();
         return;
       }
 
       const result = await faceLogin({
         challengeToken,
-        faceDescriptor: featureResult.descriptor,
+        faceDescriptor: burst.lastDescriptor,
+        frameSignals: burst.frameSignals,
       });
 
       if (result.success) {
@@ -110,7 +112,7 @@ export default function FaceLoginScreen() {
       } else {
         setScanStatus('failed');
         setErrorMessage(result.message || 'Face not recognized. Only registered face can login.');
-        fetchChallenge(); // Refresh challenge token for next attempt
+        fetchChallenge(); // Refresh challenge token (and liveness action) for next attempt
       }
     } catch (err) {
       setScanStatus('failed');
@@ -118,7 +120,6 @@ export default function FaceLoginScreen() {
       fetchChallenge();
     }
   };
-
 
   const toggleCameraFacing = () => {
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
@@ -152,6 +153,27 @@ export default function FaceLoginScreen() {
     );
   }
 
+  // This device has never enrolled a face credential — face-login is
+  // device-bound, so guide the user to password login / enrollment instead
+  // of attempting a request that can never succeed on this device.
+  if (!isChallengeLoading && deviceNotEnrolled) {
+    return (
+      <View style={[styles.centered, { backgroundColor: theme.background, padding: 24 }]}>
+        <Ionicons name="finger-print-outline" size={64} color={theme.primary} style={{ marginBottom: 16 }} />
+        <Text style={[styles.permTitle, { color: theme.text }]}>Face Login Not Set Up</Text>
+        <Text style={[styles.permSubtitle, { color: theme.textSecondary }]}>
+          This device hasn&apos;t been enrolled for face login yet. Sign in with your password first, then enable
+          Face Login from your account.
+        </Text>
+        <Button
+          title="Use Email & Password"
+          onPress={() => router.replace('/(auth)/login')}
+          style={{ width: '100%', marginTop: 24 }}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Live Camera View (No nested children) */}
@@ -161,7 +183,7 @@ export default function FaceLoginScreen() {
       <FaceCameraGuide
         stepText={
           scanStatus === 'scanning'
-            ? LIVENESS_STEPS[currentStepIndex]?.title || 'Verifying face...'
+            ? LIVENESS_INSTRUCTIONS[livenessAction] || 'Verifying face...'
             : scanStatus === 'success'
             ? 'Face Authenticated!'
             : scanStatus === 'failed'
@@ -209,8 +231,6 @@ export default function FaceLoginScreen() {
     </View>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   container: {

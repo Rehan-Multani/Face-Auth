@@ -84,10 +84,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const faceLogin = async ({ challengeToken, faceDescriptor }) => {
+  const faceLogin = async ({ challengeToken, faceDescriptor, frameSignals }) => {
     setAuthError(null);
     try {
-      const data = await authApi.verifyFaceLogin({ challengeToken, faceDescriptor });
+      const data = await authApi.verifyFaceLogin({ challengeToken, faceDescriptor, frameSignals });
       await SecureStorage.saveSession(data.accessToken, data.refreshToken, data.user);
       setUser(data.user);
       setIsAuthenticated(true);
@@ -99,10 +99,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const enrollFace = async ({ challengeToken, faceDescriptor, samples, metadata }) => {
+  const enrollFace = async ({ challengeToken, faceDescriptor, samples, frameSignals, metadata }) => {
     setAuthError(null);
     try {
-      const data = await authApi.enrollFace({ challengeToken, faceDescriptor, samples, metadata });
+      const data = await authApi.enrollFace({ challengeToken, faceDescriptor, samples, frameSignals, metadata });
       const updatedUser = { ...user, isFaceRegistered: true };
       setUser(updatedUser);
       await SecureStorage.setItem('auth_user_data_sec', JSON.stringify(updatedUser));

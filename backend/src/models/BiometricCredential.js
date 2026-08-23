@@ -8,11 +8,25 @@ const biometricCredentialSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // Normalized 128-dimensional biometric embedding template
-    template: {
-      type: [Number],
+    // Opaque server-issued device identifier (association/lookup key only —
+    // not a signed credential; see deviceIdentity in the biometric hardening plan).
+    deviceId: {
+      type: String,
       required: true,
-      select: false, // Never return biometric template in queries or APIs by default
+      index: true,
+    },
+    // AES-256-GCM encrypted 128-dimensional biometric embedding template.
+    // Never stored in plaintext; never returned in queries or APIs by default.
+    templateEncrypted: {
+      type: {
+        iv: { type: String, required: true },
+        ciphertext: { type: String, required: true },
+        authTag: { type: String, required: true },
+        keyVersion: { type: String, required: true },
+      },
+      required: true,
+      select: false,
+      _id: false,
     },
     version: {
       type: String,
@@ -52,7 +66,7 @@ const biometricCredentialSchema = new mongoose.Schema(
     timestamps: true,
     toJSON: {
       transform(doc, ret) {
-        delete ret.template; // Never expose template in JSON serialization
+        delete ret.templateEncrypted; // Never expose the encrypted template in JSON serialization
         delete ret.__v;
         return ret;
       },
@@ -60,7 +74,15 @@ const biometricCredentialSchema = new mongoose.Schema(
   }
 );
 
-// Fast compound indexes for 1:N biometric search and tenant/status queries
+// One active credential per device: DB-level invariant backing the 1:1
+// device-bound lookup (also enforces at the data layer, not just in
+// application code, that a device can't end up with two active credentials).
+biometricCredentialSchema.index(
+  { deviceId: 1, status: 1 },
+  { unique: true, partialFilterExpression: { status: 'active' } }
+);
+
+// Compound index for per-user credential management (enroll/disable/list).
 biometricCredentialSchema.index({ status: 1, user: 1 });
 
 const BiometricCredential = mongoose.model('BiometricCredential', biometricCredentialSchema);

@@ -38,3 +38,6 @@ Thumbs.db
 .claude/
 .agents/
 .idea/
+
+*.apk
+

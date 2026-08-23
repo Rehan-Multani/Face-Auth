@@ -18,9 +18,20 @@ export const Config = {
     ACCESS_TOKEN: 'auth_access_token_sec',
     REFRESH_TOKEN: 'auth_refresh_token_sec',
     USER_DATA: 'auth_user_data_sec',
+    DEVICE_ID: 'auth_device_id_sec',
   },
   FACE_RECOGNITION: {
     DESCRIPTOR_LENGTH: 128,
     CHALLENGE_TIMEOUT_MS: 120000,
+    // Active-liveness burst capture: a short sequence of low-quality frames
+    // taken while the user performs the server-assigned action (blink / turn).
+    LIVENESS_FRAME_COUNT: 3,
+    LIVENESS_FRAME_INTERVAL_MS: 380,
   },
+};
+
+export const LIVENESS_INSTRUCTIONS = {
+  BLINK: 'Blink your eyes now',
+  TURN_LEFT: 'Slowly turn your head left',
+  TURN_RIGHT: 'Slowly turn your head right',
 };

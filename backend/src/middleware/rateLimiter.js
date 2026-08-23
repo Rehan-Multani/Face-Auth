@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const MongoRateLimitStore = require('./mongoRateLimitStore');
 
 // Strict rate limiter for sensitive authentication endpoints (prevent brute-force)
 const authLimiter = rateLimit({
@@ -7,6 +8,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  store: new MongoRateLimitStore('auth'),
   message: {
     success: false,
     code: 'TOO_MANY_REQUESTS',
@@ -21,6 +23,7 @@ const challengeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  store: new MongoRateLimitStore('challenge'),
   message: {
     success: false,
     code: 'TOO_MANY_CHALLENGES',
@@ -35,6 +38,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  store: new MongoRateLimitStore('api'),
   message: {
     success: false,
     code: 'RATE_LIMIT_EXCEEDED',

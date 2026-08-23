@@ -56,14 +56,46 @@ const validateLogin = (req, res, next) => {
   next();
 };
 
+const DEVICE_ID_REGEX = /^[a-f0-9]{16,64}$/i;
+
+const validateFrameSignals = (frameSignals) => {
+  if (!Array.isArray(frameSignals) || frameSignals.length !== 3) {
+    return false;
+  }
+  return frameSignals.every(
+    (frame) =>
+      frame &&
+      typeof frame.eyeStripMean === 'number' &&
+      typeof frame.gradientCentroidX === 'number' &&
+      isFinite(frame.eyeStripMean) &&
+      isFinite(frame.gradientCentroidX)
+  );
+};
+
 const validateFaceEnroll = (req, res, next) => {
-  const { challengeToken, faceDescriptor } = req.body;
+  const { challengeToken, faceDescriptor, deviceId, frameSignals } = req.body;
 
   if (!challengeToken || typeof challengeToken !== 'string') {
     return res.status(400).json({
       success: false,
       code: 'MISSING_CHALLENGE',
       message: 'Challenge token is required for face enrollment.',
+    });
+  }
+
+  if (deviceId !== undefined && (typeof deviceId !== 'string' || !DEVICE_ID_REGEX.test(deviceId))) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_DEVICE_ID',
+      message: 'Provided device identifier is invalid.',
+    });
+  }
+
+  if (!validateFrameSignals(frameSignals)) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_LIVENESS_SIGNAL',
+      message: 'Liveness capture data is missing or malformed. Please try again.',
     });
   }
 
@@ -80,13 +112,29 @@ const validateFaceEnroll = (req, res, next) => {
 };
 
 const validateFaceVerify = (req, res, next) => {
-  const { challengeToken, faceDescriptor, email } = req.body;
+  const { challengeToken, faceDescriptor, deviceId, frameSignals } = req.body;
 
   if (!challengeToken || typeof challengeToken !== 'string') {
     return res.status(400).json({
       success: false,
       code: 'MISSING_CHALLENGE',
       message: 'Challenge token is required for face authentication.',
+    });
+  }
+
+  if (!deviceId || typeof deviceId !== 'string' || !DEVICE_ID_REGEX.test(deviceId)) {
+    return res.status(400).json({
+      success: false,
+      code: 'MISSING_DEVICE_ID',
+      message: 'This device is not set up for face login.',
+    });
+  }
+
+  if (!validateFrameSignals(frameSignals)) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_LIVENESS_SIGNAL',
+      message: 'Liveness capture data is missing or malformed. Please try again.',
     });
   }
 
@@ -97,17 +145,6 @@ const validateFaceVerify = (req, res, next) => {
       code: 'INVALID_FACE_DESCRIPTOR',
       message: vectorValidation.message,
     });
-  }
-
-  if (email) {
-    if (typeof email !== 'string' || !validator.isEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        code: 'INVALID_EMAIL',
-        message: 'Provided email is not valid.',
-      });
-    }
-    req.body.email = email.trim().toLowerCase();
   }
 
   next();

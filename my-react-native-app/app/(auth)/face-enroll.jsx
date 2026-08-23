@@ -11,11 +11,12 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { authApi } from '../../src/api/authApi';
-import { extractFaceDescriptorFromImage, LIVENESS_STEPS } from '../../src/services/faceDetection';
+import { captureLivenessBurst } from '../../src/services/livenessCapture';
 import { FaceCameraGuide } from '../../src/components/camera/FaceCameraGuide';
 import { Button } from '../../src/components/common/Button';
 import { ErrorBanner } from '../../src/components/common/ErrorBanner';
 import { Colors } from '../../src/constants/Colors';
+import { LIVENESS_INSTRUCTIONS } from '../../src/constants/Config';
 
 export default function FaceEnrollScreen() {
   const router = useRouter();
@@ -26,9 +27,9 @@ export default function FaceEnrollScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState('front');
   const [challengeToken, setChallengeToken] = useState(null);
+  const [livenessAction, setLivenessAction] = useState(null);
   const [isChallengeLoading, setIsChallengeLoading] = useState(true);
   const [scanStatus, setScanStatus] = useState('ready'); // 'ready' | 'scanning' | 'success' | 'failed'
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState(null);
 
   const cameraRef = useRef(null);
@@ -41,6 +42,7 @@ export default function FaceEnrollScreen() {
       const data = await authApi.getFaceChallenge();
       if (isMounted.current && data?.challengeToken) {
         setChallengeToken(data.challengeToken);
+        setLivenessAction(data.livenessAction);
       }
     } catch (err) {
       if (isMounted.current) {
@@ -72,32 +74,19 @@ export default function FaceEnrollScreen() {
     setErrorMessage(null);
 
     try {
-      let photo = null;
-      if (cameraRef.current) {
-        photo = await cameraRef.current.takePictureAsync({
-          base64: true,
-          quality: 0.15,
-        });
-      }
-
-      if (!photo?.base64) {
+      const burst = await captureLivenessBurst(cameraRef);
+      if (!burst.success) {
         setScanStatus('failed');
-        setErrorMessage('Could not capture frame from camera. Please hold steady.');
-        fetchChallenge();
-        return;
-      }
-
-      const featureResult = extractFaceDescriptorFromImage(photo.base64);
-      if (!featureResult.success) {
-        setScanStatus('failed');
-        setErrorMessage(featureResult.message);
+        setErrorMessage(burst.message);
         fetchChallenge();
         return;
       }
 
       const result = await enrollFace({
         challengeToken,
-        faceDescriptor: featureResult.descriptor,
+        faceDescriptor: burst.lastDescriptor,
+        samples: burst.descriptors,
+        frameSignals: burst.frameSignals,
       });
 
       if (result.success) {
@@ -116,7 +105,6 @@ export default function FaceEnrollScreen() {
       fetchChallenge();
     }
   };
-
 
   const toggleCameraFacing = () => {
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
@@ -158,7 +146,7 @@ export default function FaceEnrollScreen() {
       <FaceCameraGuide
         stepText={
           scanStatus === 'scanning'
-            ? LIVENESS_STEPS[currentStepIndex]?.title || 'Registering facial landmarks...'
+            ? LIVENESS_INSTRUCTIONS[livenessAction] || 'Registering facial landmarks...'
             : scanStatus === 'success'
             ? 'Face Registered Successfully!'
             : scanStatus === 'failed'
@@ -196,8 +184,6 @@ export default function FaceEnrollScreen() {
     </View>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   container: {

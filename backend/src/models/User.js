@@ -24,12 +24,6 @@ const userSchema = new mongoose.Schema(
       minlength: [8, 'Password must be at least 8 characters'],
       select: false, // Never return password in queries by default
     },
-    // Normalized face embedding descriptor (e.g. 128 float array)
-    faceDescriptor: {
-      type: [Number],
-      default: undefined,
-      select: false, // Never expose raw biometric templates to public endpoints
-    },
     isFaceRegistered: {
       type: Boolean,
       default: false,

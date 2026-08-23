@@ -1,8 +1,10 @@
+const crypto = require('crypto');
 const User = require('../models/User');
 const BiometricCredential = require('../models/BiometricCredential');
 const AuditLog = require('../models/AuditLog');
 const tokenService = require('../services/tokenService');
 const faceService = require('../services/faceService');
+const encryptionService = require('../services/encryption.service');
 const env = require('../config/env');
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -136,6 +138,8 @@ const login = async (req, res, next) => {
 
 /**
  * Generate Anti-Replay Face Authentication Challenge Token
+ * Also returns a randomized active-liveness action the client must perform
+ * and prove during capture (see faceService.verifyLivenessSignal).
  */
 const getFaceChallenge = async (req, res, next) => {
   try {
@@ -144,6 +148,7 @@ const getFaceChallenge = async (req, res, next) => {
       success: true,
       challengeId: challenge.challengeId,
       challengeToken: challenge.challengeToken,
+      livenessAction: challenge.livenessAction,
       expiresInMs: challenge.expiresInMs,
     });
   } catch (error) {
@@ -153,13 +158,15 @@ const getFaceChallenge = async (req, res, next) => {
 
 /**
  * Enroll / Register Face Biometrics (Protected)
+ * Binds the resulting credential to a device identifier so that face-login
+ * can look it up with a single indexed query instead of a 1:N scan.
  */
 const enrollFace = async (req, res, next) => {
   try {
-    const { challengeToken, faceDescriptor, samples, metadata = {} } = req.body;
+    const { challengeToken, faceDescriptor, samples, deviceId, frameSignals, metadata = {} } = req.body;
 
     // Verify and consume single-use challenge token
-    const verification = faceService.verifyFaceChallenge(challengeToken);
+    const verification = await faceService.verifyFaceChallenge(challengeToken);
     if (!verification.valid) {
       await AuditLog.create({
         userId: req.user._id,
@@ -175,6 +182,27 @@ const enrollFace = async (req, res, next) => {
         success: false,
         code: 'CHALLENGE_FAILED',
         message: 'Face security challenge failed or expired. Please try again.',
+      });
+    }
+
+    // Verify the active-liveness action was actually performed (server-side
+    // signal check — never trust a client-provided "livenessPassed" boolean)
+    const livenessResult = faceService.verifyLivenessSignal(verification.livenessAction, frameSignals);
+    if (!livenessResult.valid) {
+      await AuditLog.create({
+        userId: req.user._id,
+        eventType: 'LIVENESS_FAILED',
+        success: false,
+        failureReason: livenessResult.reason,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        requestId: req.headers['x-request-id'],
+      });
+
+      return res.status(400).json({
+        success: false,
+        code: 'LIVENESS_CHECK_FAILED',
+        message: 'We could not verify a live face. Please follow the on-screen instruction and try again.',
       });
     }
 
@@ -199,16 +227,27 @@ const enrollFace = async (req, res, next) => {
       });
     }
 
-    // Revoke any existing active credentials for this user
+    const boundDeviceId =
+      typeof deviceId === 'string' && deviceId.length > 0
+        ? deviceId
+        : crypto.randomBytes(24).toString('hex');
+
+    const templateEncrypted = encryptionService.encryptTemplate(synthesized.template);
+
+    // Revoke any existing active credentials for this user (any device) and
+    // for this device (any user) — a device or a user identity can only be
+    // bound to one active credential at a time, enforced at the DB layer by
+    // a partial unique index on { deviceId, status: 'active' }.
     await BiometricCredential.updateMany(
-      { user: user._id, status: 'active' },
+      { $or: [{ user: user._id, status: 'active' }, { deviceId: boundDeviceId, status: 'active' }] },
       { status: 'revoked' }
     );
 
     // Create fresh dedicated BiometricCredential
     const credential = await BiometricCredential.create({
       user: user._id,
-      template: synthesized.template,
+      deviceId: boundDeviceId,
+      templateEncrypted,
       qualityScore: synthesized.qualityScore,
       samplesCount: synthesized.samplesCount,
       version: 'v1.0',
@@ -240,6 +279,7 @@ const enrollFace = async (req, res, next) => {
       success: true,
       message: 'Face biometric successfully enrolled.',
       credentialId: credential._id,
+      deviceId: boundDeviceId,
       qualityScore: credential.qualityScore,
       user: {
         id: user._id,
@@ -254,15 +294,17 @@ const enrollFace = async (req, res, next) => {
 };
 
 /**
- * 1:N Zero-Credential Face Authentication
- * Identifies registered user directly from live camera embedding
+ * Device-Bound 1:1 Face Authentication
+ * Looks up the single active credential for the caller's deviceId (an
+ * indexed point query) and verifies the live sample against only that
+ * credential — no collection-wide biometric scan.
  */
 const verifyFaceLogin = async (req, res, next) => {
   try {
-    const { challengeToken, faceDescriptor } = req.body;
+    const { challengeToken, faceDescriptor, deviceId, frameSignals } = req.body;
 
     // Verify and consume single-use anti-replay challenge
-    const verification = faceService.verifyFaceChallenge(challengeToken);
+    const verification = await faceService.verifyFaceChallenge(challengeToken);
     if (!verification.valid) {
       await AuditLog.create({
         eventType: verification.reason === 'CHALLENGE_ALREADY_USED' ? 'CHALLENGE_REPLAY_DETECTED' : 'FACE_AUTH_FAILED',
@@ -280,6 +322,24 @@ const verifyFaceLogin = async (req, res, next) => {
       });
     }
 
+    const livenessResult = faceService.verifyLivenessSignal(verification.livenessAction, frameSignals);
+    if (!livenessResult.valid) {
+      await AuditLog.create({
+        eventType: 'LIVENESS_FAILED',
+        success: false,
+        failureReason: livenessResult.reason,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        requestId: req.headers['x-request-id'],
+      });
+
+      return res.status(400).json({
+        success: false,
+        code: 'LIVENESS_CHECK_FAILED',
+        message: 'We could not verify a live face. Please follow the on-screen instruction and try again.',
+      });
+    }
+
     const vectorValidation = faceService.validateFaceVector(faceDescriptor);
     if (!vectorValidation.valid) {
       return res.status(400).json({
@@ -289,19 +349,16 @@ const verifyFaceLogin = async (req, res, next) => {
       });
     }
 
-    // Retrieve all active biometric credentials
-    const activeCredentials = await BiometricCredential.find({ status: 'active' })
-      .select('+template')
+    // Indexed 1:1 lookup — the ONLY credential this request is ever compared against
+    const credential = await BiometricCredential.findOne({ deviceId, status: 'active' })
+      .select('+templateEncrypted')
       .populate('user');
 
-    const threshold = env.FACE_SIMILARITY_THRESHOLD; // e.g. 0.70
-    const candidates = faceService.rankCandidates(faceDescriptor, activeCredentials, threshold);
-
-    if (candidates.length === 0) {
+    if (!credential || !credential.user) {
       await AuditLog.create({
         eventType: 'FACE_AUTH_FAILED',
         success: false,
-        failureReason: 'NO_MATCHING_BIOMETRIC',
+        failureReason: 'DEVICE_NOT_ENROLLED',
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
         requestId: req.headers['x-request-id'],
@@ -314,15 +371,12 @@ const verifyFaceLogin = async (req, res, next) => {
       });
     }
 
-    // Select top candidate
-    const topMatch = candidates[0];
-    const matchedUser = topMatch.user;
-    const matchedCredential = topMatch.credential;
+    const matchedUser = credential.user;
 
     // Validate account status
-    if (!matchedUser || matchedUser.status !== 'active') {
+    if (matchedUser.status !== 'active') {
       await AuditLog.create({
-        userId: matchedUser ? matchedUser._id : null,
+        userId: matchedUser._id,
         eventType: 'FACE_AUTH_FAILED',
         success: false,
         failureReason: 'ACCOUNT_SUSPENDED_OR_MISSING',
@@ -338,9 +392,53 @@ const verifyFaceLogin = async (req, res, next) => {
       });
     }
 
+    // Decrypt only this one credential's template. Fails safe: a
+    // tampered/corrupted encrypted blob throws here rather than matching.
+    let decryptedTemplate;
+    try {
+      decryptedTemplate = encryptionService.decryptTemplate(credential.templateEncrypted);
+    } catch {
+      await AuditLog.create({
+        userId: matchedUser._id,
+        eventType: 'FACE_AUTH_FAILED',
+        success: false,
+        failureReason: 'TEMPLATE_DECRYPT_FAILED',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        requestId: req.headers['x-request-id'],
+      });
+
+      return res.status(401).json({
+        success: false,
+        code: 'FACE_NOT_RECOGNIZED',
+        message: 'Face not recognized. Please try again or use password login.',
+      });
+    }
+
+    const threshold = env.FACE_SIMILARITY_THRESHOLD;
+    const matchResult = faceService.verifyOneToOne(faceDescriptor, decryptedTemplate, threshold);
+
+    if (!matchResult.matched) {
+      await AuditLog.create({
+        userId: matchedUser._id,
+        eventType: 'FACE_AUTH_FAILED',
+        success: false,
+        failureReason: 'NO_MATCHING_BIOMETRIC',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        requestId: req.headers['x-request-id'],
+      });
+
+      return res.status(401).json({
+        success: false,
+        code: 'FACE_NOT_RECOGNIZED',
+        message: 'Face not recognized. Please try again or use password login.',
+      });
+    }
+
     // Update credential & user activity
-    matchedCredential.lastAuthenticatedAt = new Date();
-    await matchedCredential.save();
+    credential.lastAuthenticatedAt = new Date();
+    await credential.save();
 
     matchedUser.lastLoginAt = new Date();
     matchedUser.failedLoginAttempts = 0;
@@ -366,7 +464,7 @@ const verifyFaceLogin = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Face authentication successful.',
-      matchConfidence: parseFloat((topMatch.similarity * 100).toFixed(1)),
+      matchConfidence: parseFloat((matchResult.similarity * 100).toFixed(1)),
       user: {
         id: matchedUser._id,
         name: matchedUser.name,
@@ -383,19 +481,26 @@ const verifyFaceLogin = async (req, res, next) => {
 
 /**
  * Disable Face Biometric Authentication (Protected)
+ * Disables the credential for the caller's current device by default; pass
+ * an explicit deviceId to target a different enrolled device.
  */
 const disableFaceAuth = async (req, res, next) => {
   try {
     const userId = req.user._id;
+    const { deviceId } = req.body;
 
-    await BiometricCredential.updateMany(
-      { user: userId, status: 'active' },
-      { status: 'disabled' }
-    );
+    const filter =
+      typeof deviceId === 'string' && deviceId.length > 0
+        ? { user: userId, deviceId, status: 'active' }
+        : { user: userId, status: 'active' };
+
+    await BiometricCredential.updateMany(filter, { status: 'disabled' });
+
+    const remainingActive = await BiometricCredential.exists({ user: userId, status: 'active' });
 
     const user = await User.findById(userId);
     if (user) {
-      user.isFaceRegistered = false;
+      user.isFaceRegistered = !!remainingActive;
       await user.save();
     }
 
