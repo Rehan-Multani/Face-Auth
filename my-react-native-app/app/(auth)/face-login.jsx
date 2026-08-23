@@ -73,14 +73,14 @@ export default function FaceLoginScreen() {
     setScanStatus('scanning');
     setErrorMessage(null);
 
-    // Liveness progression simulation
+    // Fast smooth visual scan progression
     setTimeout(() => {
       if (isMounted.current) setCurrentStepIndex(1);
-    }, 700);
+    }, 120);
 
     setTimeout(() => {
       if (isMounted.current) setCurrentStepIndex(2);
-    }, 1400);
+    }, 260);
 
     setTimeout(async () => {
       if (!isMounted.current) return;
@@ -90,9 +90,10 @@ export default function FaceLoginScreen() {
         if (cameraRef.current) {
           photo = await cameraRef.current.takePictureAsync({
             base64: true,
-            quality: 0.35,
+            quality: 0.15,
           });
         }
+
 
         if (!photo?.base64) {
           setScanStatus('failed');

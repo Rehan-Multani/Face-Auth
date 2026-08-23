@@ -74,6 +74,7 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
     const gridRows = 8;
     const cellW = Math.max(1, Math.floor(regionW / gridCols));
     const cellH = Math.max(1, Math.floor(regionH / gridRows));
+    const stride = Math.max(1, Math.floor(cellW / 8)); // Strided sampling for 8x speedup
 
     let totalLum = 0;
     let totalLumSq = 0;
@@ -96,8 +97,8 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
         const cxStart = xStart + c * cellW;
         const cxEnd = Math.min(cxStart + cellW, W);
 
-        for (let y = cyStart; y < cyEnd; y++) {
-          for (let x = cxStart; x < cxEnd; x++) {
+        for (let y = cyStart; y < cyEnd; y += stride) {
+          for (let x = cxStart; x < cxEnd; x += stride) {
             const idx = (y * W + x) * bytesPerPixel;
             const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
             cellSum += lum;
@@ -105,9 +106,9 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
             totalLumSq += lum * lum;
             cellPixels++;
 
-            if (x > cxStart && y > cyStart) {
-              const prevXIdx = (y * W + (x - 1)) * bytesPerPixel;
-              const prevYIdx = ((y - 1) * W + x) * bytesPerPixel;
+            if (x > cxStart + stride && y > cyStart + stride) {
+              const prevXIdx = (y * W + (x - stride)) * bytesPerPixel;
+              const prevYIdx = ((y - stride) * W + x) * bytesPerPixel;
               const lumX = 0.299 * data[prevXIdx] + 0.587 * data[prevXIdx + 1] + 0.114 * data[prevXIdx + 2];
               const lumY = 0.299 * data[prevYIdx] + 0.587 * data[prevYIdx + 1] + 0.114 * data[prevYIdx + 2];
               cellGradSum += Math.abs(lum - lumX) + Math.abs(lum - lumY);
@@ -121,6 +122,7 @@ export const extractFaceDescriptorFromImage = (base64Str) => {
         pixelCount += cellPixels;
       }
     }
+
 
     const faceMean = totalLum / Math.max(1, pixelCount);
     const faceVariance = (totalLumSq / Math.max(1, pixelCount)) - (faceMean * faceMean);
