@@ -82,7 +82,16 @@ export default function LoginScreen() {
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             Secure Face & Password Authentication
           </Text>
+
+          {/* Update Verification Badge */}
+          <View style={[styles.versionBadge, { backgroundColor: theme.primaryGlow, borderColor: theme.primary }]}>
+            <Ionicons name="flash" size={14} color={theme.primary} />
+            <Text style={[styles.versionBadgeText, { color: theme.primaryLight }]}>
+              v2.0 Ultra-Fast 1-Tap AI Biometrics
+            </Text>
+          </View>
         </View>
+
 
         {/* Offline Alert */}
         {!isConnected && (
@@ -170,6 +179,13 @@ export default function LoginScreen() {
             <Text style={[styles.footerLink, { color: theme.primaryLight }]}>Register</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Build Verification Tag */}
+        <View style={styles.buildTagContainer}>
+          <Text style={[styles.buildTagText, { color: theme.textMuted }]}>
+            FaceAuth AI • v2.0-Production (Instant 1-Tap)
+          </Text>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -188,7 +204,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
   },
   logoCircle: {
     width: 72,
@@ -197,17 +213,33 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   title: {
     fontSize: 26,
     fontWeight: '700',
     letterSpacing: 0.3,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
     textAlign: 'center',
+    marginBottom: 10,
+  },
+  versionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginTop: 6,
+  },
+  versionBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   form: {
     width: '100%',
@@ -218,7 +250,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   dividerRow: {
-
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 18,
@@ -236,7 +267,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 36,
+    marginTop: 28,
   },
   footerText: {
     fontSize: 14,
@@ -245,4 +276,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  buildTagContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  buildTagText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
 });
+

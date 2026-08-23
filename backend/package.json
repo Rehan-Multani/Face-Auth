@@ -4,11 +4,17 @@
   "description": "Production-Ready Face & Password Auth Backend with Node.js, Express, and MongoDB",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node api.js && node src/server.js",
+    "dev": "node api.js && node --watch src/server.js",
     "test": "node --test"
   },
-  "keywords": ["react-native", "auth", "face-recognition", "jwt", "mongodb"],
+  "keywords": [
+    "react-native",
+    "auth",
+    "face-recognition",
+    "jwt",
+    "mongodb"
+  ],
   "author": "Antigravity",
   "license": "MIT",
   "dependencies": {
