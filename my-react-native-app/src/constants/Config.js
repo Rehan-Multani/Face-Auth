@@ -2,14 +2,17 @@ import { Platform } from 'react-native';
 
 // In development, Android emulator uses 10.0.2.2 to access host machine localhost
 const getDevApiUrl = () => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
+  // If EXPO_PUBLIC_API_URL is specified in .env, use it
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
   }
-  return 'http://localhost:5000/api';
+  // Default to live Vercel backend
+  return 'https://face-auth-beta.vercel.app/api';
 };
 
 export const Config = {
-  API_BASE_URL: process.env.EXPO_PUBLIC_API_URL || getDevApiUrl(),
+  API_BASE_URL: getDevApiUrl(),
+
   REQUEST_TIMEOUT_MS: 12000,
   TOKEN_KEYS: {
     ACCESS_TOKEN: 'auth_access_token_sec',
