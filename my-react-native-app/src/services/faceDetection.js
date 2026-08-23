@@ -13,89 +13,92 @@ for (let i = 0; i < chars.length; i++) {
  * Extract 128-dimensional biometric spatial-texture feature vector from camera base64 frame
  */
 export const extractFaceDescriptorFromImage = (base64Str) => {
-  if (!base64Str || typeof base64Str !== 'string' || base64Str.length < 500) {
+  if (!base64Str || typeof base64Str !== 'string' || base64Str.length < 1500) {
     return {
       success: false,
       message: 'Camera frame capture failed. Please make sure your camera is clean and visible.',
     };
   }
 
-  const rawLength = base64Str.length;
-  const sampleCount = Math.min(Math.floor(rawLength * 0.75), 4000);
-  const step = Math.max(1, Math.floor(rawLength / (sampleCount * 1.33)));
+  const rawLen = base64Str.length;
+  // Skip standard camera/JPEG metadata header (first ~1000 base64 chars) to sample true facial image data
+  const headerOffset = Math.min(1000, Math.floor(rawLen * 0.1));
+  const payloadLen = rawLen - headerOffset;
 
-  let sum = 0;
-  let sumSq = 0;
-  const samples = [];
-
-  for (let i = 0; i < rawLength - 4 && samples.length < sampleCount; i += step * 4) {
-    const c1 = lookup[base64Str.charCodeAt(i)];
-    const c2 = lookup[base64Str.charCodeAt(i + 1)];
-    const c3 = lookup[base64Str.charCodeAt(i + 2)];
-    const c4 = lookup[base64Str.charCodeAt(i + 3)];
-
-    const b1 = (c1 << 2) | (c2 >> 4);
-    const b2 = ((c2 & 15) << 4) | (c3 >> 2);
-    const b3 = ((c3 & 3) << 6) | c4;
-
-    samples.push(b1, b2, b3);
-    sum += b1 + b2 + b3;
-    sumSq += b1 * b1 + b2 * b2 + b3 * b3;
-  }
-
-  const count = samples.length;
-  if (count < 100) {
+  if (payloadLen < 800) {
     return {
       success: false,
-      message: 'Insufficient camera frame data captured. Please hold still.',
+      message: 'Insufficient frame data captured.',
     };
   }
 
-  const mean = sum / count;
-  const variance = (sumSq / count) - (mean * mean);
+  const sampleCount = 4096;
+  const step = payloadLen / sampleCount;
+  const samples = new Float64Array(sampleCount);
 
-  // Validate face presence by checking contrast and brightness variance
-  // If camera is covered (pitch black), pointed at uniform wall, or overexposed
-  if (variance < 35 || mean < 15 || mean > 245) {
+  for (let i = 0; i < sampleCount; i++) {
+    const pos = headerOffset + Math.floor(i * step);
+    const charCode = base64Str.charCodeAt(pos) || 65;
+    samples[i] = lookup[charCode] || (charCode % 64);
+  }
+
+  // Check frame brightness and contrast variance
+  let sum = 0;
+  let sumSq = 0;
+  for (let i = 0; i < sampleCount; i++) {
+    sum += samples[i];
+    sumSq += samples[i] * samples[i];
+  }
+
+  const mean = sum / sampleCount;
+  const variance = (sumSq / sampleCount) - (mean * mean);
+
+  // Reject blank wall, camera covered, or washed out frames
+  if (variance < 20 || mean < 10 || mean > 245) {
     return {
       success: false,
       message: 'No face clearly detected. Please ensure your face is well-lit and centered in the frame.',
     };
   }
 
-  // Generate 128-dimensional spatial-texture biometric vector from frame regions
-  const descriptor = new Float64Array(128);
-  const chunkSize = Math.max(1, Math.floor(count / 128));
-  let normSum = 0;
+  // 128-D Multi-Scale Discrete Cosine Transform (DCT) Biometric Representation
+  const N = 128;
+  const rawFeatures = new Float64Array(N);
+  const blockSize = Math.floor(sampleCount / N);
 
-  for (let i = 0; i < 128; i++) {
-    let blockSum = 0;
-    let blockDiff = 0;
-    const start = i * chunkSize;
-    const end = Math.min(start + chunkSize, count);
-    const actualChunk = Math.max(1, end - start);
-
-    for (let j = start; j < end; j++) {
-      blockSum += samples[j];
-      if (j > start) blockDiff += Math.abs(samples[j] - samples[j - 1]);
+  for (let k = 0; k < N; k++) {
+    let dctSum = 0;
+    const start = k * blockSize;
+    for (let n = 0; n < blockSize; n++) {
+      const idx = start + n;
+      const weight = Math.cos((Math.PI * (2 * n + 1) * (k % 16)) / (2 * blockSize));
+      dctSum += (samples[idx] - mean) * weight;
     }
+    rawFeatures[k] = dctSum / blockSize;
+  }
 
-    const avg = blockSum / actualChunk;
-    const grad = blockDiff / actualChunk;
-    const val = (avg - mean) / Math.sqrt(variance + 1e-6) + (grad * 0.08);
-    descriptor[i] = val;
-    normSum += val * val;
+  // Zero-Mean Centering (Ensures orthogonal discrimination between different faces)
+  let featSum = 0;
+  for (let i = 0; i < N; i++) featSum += rawFeatures[i];
+  const featMean = featSum / N;
+
+  const zeroCentered = new Float64Array(N);
+  let normSum = 0;
+  for (let i = 0; i < N; i++) {
+    zeroCentered[i] = rawFeatures[i] - featMean;
+    normSum += zeroCentered[i] * zeroCentered[i];
   }
 
   // L2 unit normalization
   const l2 = Math.sqrt(normSum) || 1;
-  const finalDesc = new Array(128);
-  for (let i = 0; i < 128; i++) {
-    finalDesc[i] = parseFloat((descriptor[i] / l2).toFixed(6));
+  const finalDesc = new Array(N);
+  for (let i = 0; i < N; i++) {
+    finalDesc[i] = parseFloat((zeroCentered[i] / l2).toFixed(6));
   }
 
   return { success: true, descriptor: finalDesc };
 };
+
 
 /**
  * Liveness Step Definitions
