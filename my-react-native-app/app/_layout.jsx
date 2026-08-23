@@ -19,15 +19,21 @@ function RootNavigation() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const isEnrollingFace = segments[1] === 'face-enroll';
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if unauthenticated and trying to access protected screen
-      router.replace('/(auth)/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to app home if authenticated and trying to access auth screen
-      router.replace('/(app)');
+    if (!isAuthenticated) {
+      // If not authenticated and attempting to view protected screens or face-enroll
+      if (!inAuthGroup || isEnrollingFace) {
+        router.replace('/(auth)/login');
+      }
+    } else {
+      // If authenticated and on login / register / face-login public screens
+      if (inAuthGroup && !isEnrollingFace) {
+        router.replace('/(app)');
+      }
     }
   }, [isAuthenticated, isLoading, segments, router]);
+
 
   if (isLoading) {
     return (
